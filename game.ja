@@ -1,0 +1,403 @@
+"use strict";
+
+const SIZE = 20;
+let board = [];
+
+// state.traps speichert nun ein Array beliebig vieler Minen/Fallen
+const state = {
+  screen: "battle",
+  round: 1,
+  units: [],
+  selected: null,
+  turnOrder: [],
+  turnIndex: 0,
+  mode: null,
+  highlight: [],
+  log: [],
+  victory: false,
+  defeat: false,
+  core: null,
+  tool: "select",
+  editorSelected: null,
+  traps: [], 
+  formTarget: null,
+  formImageData: null
+};
+
+const templates = {
+  powerkim: { id: "powerkim", name: "Powerkim", short: "P", team: "hero", className: "Nahkampf / Tank", x: 2, y: 17, hp: 180, maxHp: 180, attack: 20, defense: 18, stability: 25, movement: 5, range: 1, damage: 35, knockback: 3, abilityName: "Kraftschlag", abilityCost: 1, color: "#55baff", image: "", flying: false, heal: 0, trapDamage: 0 },
+  visor: { id: "visor", name: "Visor", short: "V", team: "hero", className: "Fernkampf / Taktiker", x: 3, y: 17, hp: 80, maxHp: 80, attack: 22, defense: 10, stability: 15, movement: 6, range: 10, damage: 24, knockback: 1, abilityName: "Präzisionsschuss", abilityCost: 1, color: "#8be5ff", image: "", flying: false, heal: 0, trapDamage: 0 },
+  watson: { id: "watson", name: "Watson", short: "W", team: "hero", className: "Heiler / Fliegend", x: 4, y: 17, hp: 100, maxHp: 100, attack: 8, defense: 10, stability: 20, movement: 8, range: 8, heal: 40, abilityName: "Heilstrahl", abilityCost: 1, flying: true, color: "#92f6a7", image: "", damage: 0, knockback: 0, trapDamage: 0 },
+  nyra: { id: "nyra", name: "Nyra", short: "N", team: "hero", className: "Spionin / Fallen", x: 1, y: 18, hp: 70, maxHp: 70, attack: 15, defense: 12, stability: 15, movement: 9, range: 1, damage: 18, knockback: 2, trapDamage: 30, abilityName: "Mine legen", abilityCost: 1, color: "#d8b1ff", image: "", flying: false, heal: 0 },
+  drone1: { id: "drone1", name: "Sicherheitsdrohne 1", short: "D", team: "enemy", className: "Fernkampf / Fliegend", x: 16, y: 3, hp: 40, maxHp: 40, attack: 14, defense: 3, stability: 10, movement: 8, range: 7, damage: 14, knockback: 1, abilityName: "Laserschuss", color: "#ff9292", flying: true, image: "", heal: 0, trapDamage: 0, abilityCost: 1 },
+  drone2: { id: "drone2", name: "Sicherheitsdrohne 2", short: "D", team: "enemy", className: "Fernkampf / Fliegend", x: 17, y: 5, hp: 40, maxHp: 40, attack: 14, defense: 3, stability: 10, movement: 8, range: 7, damage: 14, knockback: 1, abilityName: "Laserschuss", color: "#ff9292", flying: true, image: "", heal: 0, trapDamage: 0, abilityCost: 1 },
+  bulwark: { id: "bulwark", name: "Bulwark", short: "B", team: "enemy", className: "Schwerer Tank", x: 15, y: 15, hp: 220, maxHp: 220, attack: 26, defense: 20, stability: 40, movement: 3, range: 1, damage: 16, knockback: 3, abilityName: "Rückstoßangriff", color: "#ffb86c", image: "", flying: false, heal: 0, trapDamage: 0, abilityCost: 1 }
+};
+
+const STATUS = {
+  burning: { label: "Brennend", duration: 2 },
+  stunned: { label: "Betäubt", duration: 1 },
+  paralyzed: { label: "Paralysiert", duration: 1 },
+  knocked_down: { label: "Am Boden", duration: 1 },
+  slowed: { label: "Verlangsamt", duration: 1 },
+  shielded: { label: "Geschützt", duration: 1 },
+  marked: { label: "Markiert", duration: 1 }
+};
+
+function render() {
+  const t = document.getElementById("screen-title");
+  const s = document.getElementById("screen-status");
+  const u = currentUnit();
+  if (t) t.textContent = state.screen === "battle" ? "Arena Heroes" : "Arena Editor";
+  if (s) s.textContent = state.screen !== "battle" ? "Karte bearbeiten" : state.victory ? "Sieg" : state.defeat ? "Niederlage" : u ? `Runde \({state.round} ·\){u.name} ist an der Reihe` : `Runde ${state.round}`;
+  state.screen === "battle" ? battle() : editor();
+}
+
+function makeUnit(t) {
+  return { ...t, id: `\({t.id}-\){Math.random().toString(36).slice(2, 8)}`, alive: true, ap: 2, acted: false, moveLeft: t.movement, statuses: [], x: t.x, y: t.y };
+}
+
+function cell(x, y) { return x >= 0 && y >= 0 && x < SIZE && y < SIZE ? board[y][x] : null; }
+function at(x, y) { return state.units.find(u => u.alive && u.x === x && u.y === y); }
+function atAny(x, y) { return state.units.find(u => u.x === x && u.y === y); }
+function currentUnit() { return state.turnOrder[state.turnIndex] || null; }
+function dist(a, b) { return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)); }
+function log(v) { state.log.unshift(v); state.log = state.log.slice(0, 18); }
+
+function hasStatus(u, id) { return u?.statuses.some(s => s.id === id); }
+function addStatus(u, id, duration = STATUS[id]?.duration || 1) {
+  if (!u || !STATUS[id]) return;
+  const old = u.statuses.find(s => s.id === id);
+  if (old) old.remaining = Math.max(old.remaining, duration);
+  else u.statuses.push({ id, remaining: duration });
+  log(`\({u.name}:\){STATUS[id].label}.`);
+}
+function removeStatus(u, id) { if (u) u.statuses = u.statuses.filter(s => s.id !== id); }
+function statusText(u) { return u.statuses.length ? u.statuses.map(s => STATUS[s.id]?.label || s.id).join(", ") : "Normal"; }
+
+function setupMap() {
+  board = Array.from({ length: SIZE }, () => Array.from({ length: SIZE }, () => ({ type: "floor", walk: true, los: false, cover: 0 })));
+  const set = (x, y, type) => {
+    const c = cell(x, y);
+    if (!c) return;
+    c.type = type;
+    c.walk = !['wall', 'container', 'vehicle'].includes(type);
+    c.los = ['wall', 'container'].includes(type);
+    c.cover = type === "tree" ? 1 : type === "wall" || type === "container" ? 2 : 0;
+  };
+  for (let i = 0; i < SIZE; i++) { set(i, 0, "wall"); set(i, 19, "wall"); set(0, i, "wall"); set(19, i, "wall"); }
+  [[4, 4], [5, 4], [6, 4], [4, 5], [6, 5], [4, 6], [5, 6], [6, 6], [10, 10], [11, 10], [12, 10], [11, 11], [12, 11], [13, 11], [10, 12], [11, 12], [12, 12]].forEach(p => set(p[0], p[1], "wall"));
+  [[3, 2], [12, 2], [3, 3], [12, 3], [8, 8], [9, 8], [10, 8], [16, 12], [16, 13]].forEach(p => set(p[0], p[1], "container"));
+  [[6, 13], [15, 9]].forEach(p => set(p[0], p[1], "vehicle"));
+  for (let x = 8; x <= 12; x++) { set(x, 15, "water"); set(x, 16, "water"); }
+  set(13, 13, "core");
+  state.core = { name: "Nexus-Energiekern", x: 13, y: 13, hp: 150, maxHp: 150, defense: 10, alive: true };
+}
+
+function startRound() {
+  state.turnOrder = state.units.filter(u => u.alive).sort((a, b) => b.movement - a.movement || Math.random() - .5);
+  state.turnIndex = 0;
+  state.turnOrder.forEach(u => { u.ap = 2; u.acted = false; u.moveLeft = u.movement; });
+  skipUnavailable();
+  log(`Runde \({state.round}:\){state.turnOrder.map(u => `\({u.name} (\){u.movement})`).join(" → ")}`);
+}
+
+function skipUnavailable() {
+  let n = 0;
+  while (n++ < state.turnOrder.length) {
+    const u = currentUnit();
+    if (!u || !u.alive) { advanceTurn(true); continue; }
+    if (hasStatus(u, "paralyzed") || hasStatus(u, "stunned")) {
+      log(`\({u.name} kann nicht handeln (\){statusText(u)}).`);
+      advanceTurn(true);
+      continue;
+    }
+    return;
+  }
+}
+
+function tickStatuses(u) {
+  if (!u || !u.statuses.length) return;
+  u.statuses = u.statuses.filter(s => {
+    s.remaining -= 1;
+    if (s.remaining <= 0) {
+      log(`\({u.name}:\){STATUS[s.id]?.label || s.id} lässt nach.`);
+      return false;
+    }
+    return true;
+  });
+}
+
+function advanceTurn(skipped = false) {
+  if (!state.turnOrder.length) return;
+  const u = currentUnit();
+  if (u) {
+    if (!skipped) u.acted = true;
+    tickStatuses(u);
+  }
+  state.turnIndex++;
+  if (state.turnIndex >= state.turnOrder.length) {
+    state.round++;
+    startRound();
+  } else skipUnavailable();
+}
+
+function enter(u, x, y) {
+  const c = cell(x, y);
+  return c && c.walk && (c.type !== "water" || u.flying) && !at(x, y);
+}
+
+function reachable(u) {
+  const distMap = new Map(), key = (x, y) => `\({x},\){y}`;
+  distMap.set(key(u.x, u.y), 0);
+  const queue = [{ x: u.x, y: u.y, d: 0 }];
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const result = [];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur.d >= u.moveLeft) continue;
+    for (const [dx, dy] of dirs) {
+      const nx = cur.x + dx, ny = cur.y + dy, nd = cur.d + 1, k = key(nx, ny);
+      if (nd > u.moveLeft) continue;
+      if (distMap.has(k) && distMap.get(k) <= nd) continue;
+      if (!enter(u, nx, ny)) continue;
+      distMap.set(k, nd);
+      queue.push({ x: nx, y: ny, d: nd });
+      result.push({ x: nx, y: ny, d: nd });
+    }
+  }
+  return result;
+}
+
+// FIX: Sichtlinie prüft nun auch das Zielfeld (b) explizit auf Sichtblockaden
+function los(a, b) {
+  const n = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  for (let i = 1; i <= n; i++) {
+    const c = cell(a.x + Math.round((b.x - a.x) * i / n), a.y + Math.round((b.y - a.y) * i / n));
+    if (c?.los) return false;
+  }
+  return true;
+}
+
+function cover(t) {
+  const c = cell(t.x, t.y);
+  return c?.cover === 2 ? 8 : c?.cover === 1 ? 4 : 0;
+}
+
+function hit(a, t) {
+  return a.attack + Math.floor(Math.random() * 6) - (t.defense || 0) - cover(t) + (hasStatus(t, "marked") ? 3 : 0);
+}
+
+function damage(a, t, n) {
+  if (!t?.alive) return;
+  const d = Math.max(1, n - (hasStatus(t, "shielded") ? Math.ceil((t.defense || 0) * 1.5) : t.defense || 0));
+  t.hp = Math.max(0, t.hp - d);
+  log(`\({a.name} verursacht\){d} Schaden an ${t.name}.`);
+  if (!t.hp) {
+    t.alive = false;
+    t.ap = 0;
+    log(`${t.name} ist kampfunfähig.`);
+  }
+}
+
+// FIX: Mehrere Fallen verwalten & auslösen
+function triggerTrap(u) {
+  if (!u?.alive) return;
+  const trapIndex = state.traps.findIndex(t => t.x === u.x && t.y === u.y);
+  if (trapIndex === -1) return;
+
+  const trap = state.traps[trapIndex];
+  state.traps.splice(trapIndex, 1);
+  log(`${u.name} berührt Nyras Mine.`);
+  damage({ name: "Nyra – Mine" }, u, trap.damage);
+}
+
+function knockback(t, a, f) {
+  const dx = Math.sign(t.x - a.x), dy = Math.sign(t.y - a.y);
+  for (let i = 0; i < f && t.alive; i++) {
+    const x = t.x + dx, y = t.y + dy, c = cell(x, y), block = at(x, y);
+    if (!c || !c.walk) {
+      damage({ name: "Kollision" }, t, 8);
+      break;
+    }
+    if (block) {
+      damage({ name: "Kollision" }, t, 6);
+      damage({ name: "Kollision" }, block, 6);
+      break;
+    }
+    t.x = x;
+    t.y = y;
+    triggerTrap(t);
+  }
+}
+
+function doAttack(t, ability = false) {
+  const a = currentUnit();
+  if (!a || a.ap < 1 || !t || t.team === a.team || dist(a, t) > a.range || !los(a, t) || hasStatus(a, "knocked_down")) return;
+  if (hit(a, t) <= 0) {
+    log(`\({a.name} verfehlt\){t.name}.`);
+    spend(a);
+    finishAction();
+    return;
+  }
+  damage(a, t, ability ? a.damage || 10 : a.attack + 5);
+  if (t.alive && a.knockback) knockback(t, a, a.knockback);
+  if (t.alive && a.knockback >= (t.stability || 20)) addStatus(t, "knocked_down");
+  spend(a);
+  finishAction();
+}
+
+function spend(u) {
+  u.ap = Math.max(0, u.ap - (u.abilityCost && state.mode === "ability" ? u.abilityCost : 1));
+  u.acted = true;
+}
+
+function finishAction() {
+  state.mode = null;
+  state.highlight = [];
+  check();
+  render();
+}
+
+function isNyra(u) { return u?.id?.startsWith("nyra-"); }
+
+// FIX: Mehrere Fallen platzieren erlaubt
+function useAbility(t, x, y) {
+  const a = currentUnit();
+  if (!a || a.ap < 1) return;
+  if (isNyra(a)) {
+    const existingTrap = state.traps.find(tr => tr.x === x && tr.y === y);
+    if (existingTrap || !cell(x, y)?.walk || atAny(x, y) || dist(a, { x, y }) !== 1) return;
+    
+    state.traps.push({ x, y, damage: a.trapDamage || 30, ownerId: a.id });
+    log(`${a.name} legt eine Mine.`);
+    spend(a);
+    finishAction();
+    return;
+  }
+  if (a.heal) {
+    if (!t || t.team !== a.team || !los(a, t)) return;
+    t.hp = Math.min(t.maxHp, t.hp + a.heal);
+    log(`\({a.name} heilt\){t.name} um ${a.heal}.`);
+    spend(a);
+    finishAction();
+  } else doAttack(t, true);
+}
+
+function move(x, y) {
+  const u = currentUnit();
+  if (!u || u.ap < 1 || hasStatus(u, "knocked_down")) return;
+  const target = state.highlight.find(p => p.x === x && p.y === y);
+  if (!target) return;
+  u.x = x;
+  u.y = y;
+  u.moveLeft -= target.d;
+  triggerTrap(u);
+  spend(u);
+  state.highlight = reachable(u);
+  render();
+}
+
+function endTurn() {
+  if (state.victory || state.defeat) return;
+  const u = currentUnit();
+  if (!u) return;
+  if (hasStatus(u, "knocked_down") && u.ap) {
+    removeStatus(u, "knocked_down");
+    spend(u);
+    log(`${u.name} steht auf.`);
+  } else {
+    log(`${u.name} beendet seinen Zug.`);
+    state.mode = null;
+    state.highlight = [];
+    advanceTurn();
+  }
+  check();
+  render();
+}
+
+function check() {
+  if (!state.units.some(u => u.alive && u.team === "hero")) state.defeat = true;
+  if (state.core && !state.core.alive) state.victory = true;
+}
+
+function snapshotBattle() {
+  state.battleSnapshot = {
+    board: JSON.parse(JSON.stringify(board)),
+    units: JSON.parse(JSON.stringify(state.units)),
+    core: JSON.parse(JSON.stringify(state.core)),
+    traps: JSON.parse(JSON.stringify(state.traps))
+  };
+}
+
+function resetBattle() {
+  if (!state.battleSnapshot) return;
+  board = JSON.parse(JSON.stringify(state.battleSnapshot.board));
+  state.units = JSON.parse(JSON.stringify(state.battleSnapshot.units));
+  state.core = JSON.parse(JSON.stringify(state.battleSnapshot.core));
+  state.traps = JSON.parse(JSON.stringify(state.battleSnapshot.traps || []));
+  state.victory = false;
+  state.defeat = false;
+  state.round = 1;
+  state.mode = null;
+  state.highlight = [];
+  state.log = [];
+  log("Kampf neu gestartet.");
+  startRound();
+  render();
+}
+
+function clickTile(x, y) {
+  if (state.victory || state.defeat) return;
+  const u = currentUnit(), t = at(x, y);
+  if (!u) return;
+  if (state.mode === "move") return move(x, y);
+  if (state.mode === "attack") return t ? doAttack(t) : undefined;
+  if (state.mode === "ability") return useAbility(t, x, y);
+  if (t?.team === "hero") state.selected = t.id;
+  render();
+}
+
+function mode(m) {
+  if (state.victory || state.defeat) return;
+  const u = currentUnit();
+  if (!u || u.ap < 1 || hasStatus(u, "paralyzed") || hasStatus(u, "stunned") || hasStatus(u, "knocked_down")) return;
+  
+  state.mode = m;
+  if (m === "move") state.highlight = reachable(u);
+  else if (m === "ability" && isNyra(u)) {
+    state.highlight = [{ x: u.x + 1, y: u.y }, { x: u.x - 1, y: u.y }, { x: u.x, y: u.y + 1 }, { x: u.x, y: u.y - 1 }]
+      .filter(p => cell(p.x, p.y)?.walk && !atAny(p.x, p.y) && !state.traps.some(tr => tr.x === p.x && tr.y === p.y));
+  } else {
+    state.highlight = state.units
+      .filter(t => t.alive && (m === "ability" && u.heal ? t.team === u.team && t.hp < t.maxHp : t.team !== u.team) && dist(u, t) <= u.range && los(u, t))
+      .map(t => ({ x: t.x, y: t.y }));
+  }
+  render();
+}
+
+/* ---------- Rendering ---------- */
+function boardView() {
+  const r = document.getElementById("board");
+  if (!r) return;
+  r.innerHTML = "";
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const e = document.createElement("div"), c = cell(x, y);
+      e.className = `tile ${c.type}`;
+      if (state.highlight.some(p => p.x === x && p.y === y)) e.classList.add("highlight");
+      
+      // Rendere Fallen auf diesem Feld
+      if (state.traps.some(tr => tr.x === x && tr.y === y)) {
+        const m = document.createElement("div");
+        m.className = "trap";
+        m.textContent = "✹";
+        e.appendChild(m);
+      }
+
+      const u = atAny(x, y);
+      if (u) {
+        const q = document.createElement("div");
+        q.className = `unit \({u.team}\){u === currentUnit() ? "selected" : ""} ${u.alive ? "" : "defeated"}`;
+        q.style.background = u.image ? `url('\({u.image}') center/cover` : `linear-gradient(\){u.color || "#4daeff"},#1d4f80)`;
+        q.innerHTML = `${u.image ? "" : `${u.short || "?"}`}
