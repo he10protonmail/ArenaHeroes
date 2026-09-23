@@ -9,11 +9,18 @@
 <body>
   <main id="game">
     <header id="topbar">
-      <div class="brand"><strong id="screen-title">Arena Heroes</strong><span id="screen-status"></span></div>
-      <nav><button id="battle-button">Kampf</button><button id="editor-button" class="primary">Editor</button><button id="abort-button" class="warning">Abbruch</button></nav>
+      <div class="brand">
+        <strong id="screen-title">Arena Heroes</strong>
+        <span id="screen-status"></span>
+      </div>
+      <nav>
+        <button id="battle-button" type="button">Kampf</button>
+        <button id="editor-button" type="button" class="primary">Editor</button>
+        <button id="abort-button" type="button" class="warning">Abbruch</button>
+      </nav>
     </header>
     <section id="workspace"></section>
   </main>
-  <script src="game.js"></script>
+  <script type="module" src="./js/main.js"></script>
 </body>
 </html>
