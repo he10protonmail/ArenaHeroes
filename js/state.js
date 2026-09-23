@@ -38,6 +38,13 @@ export function createState() {
     editorSelected: null,
     editorTerrain: null,
     formTarget: null,
+    // editorDraft hält die Arbeitskopie der Einheit, die gerade im Formular
+    // bearbeitet wird. Erst beim Speichern wird sie in state.units übernommen
+    // (neu) bzw. in die bestehende Einheit gemergt (Bearbeiten). Solange der
+    // Draft existiert, ist state.units unverändert – Abbrechen ist damit
+    // immer verlustfrei möglich.
+    // Form: { isNew: boolean, unit: {...Einheitendaten inkl. id} }
+    editorDraft: null,
     traps: [],
     battleSnapshot: null,
     mission: { type: "destroy_core", coreHp: 100, coreMaxHp: 100 }
