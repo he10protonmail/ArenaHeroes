@@ -1,7 +1,19 @@
 export function makeUnit(template, overrides = {}) {
   const unit = { ...template, ...overrides };
+  const requestedAbility = unit.abilityType || unit.ability || "none";
+  // The current combat runtime still recognizes the legacy direction handlers:
+  // legacy "pull" pushes away, legacy "whip" pulls toward. Normalize the new
+  // public names here so the game rules remain: push = away, pull = toward.
+  const runtimeAbility = requestedAbility === "push"
+    ? "pull"
+    : requestedAbility === "pull"
+      ? "whip"
+      : requestedAbility;
+
   return {
     ...unit,
+    abilityType: runtimeAbility,
+    abilityName: unit.abilityName || (requestedAbility === "push" ? "Push" : requestedAbility === "pull" ? "Pull" : "Keine"),
     id: unit.id?.includes("-") ? unit.id : `${unit.id}-${Math.random().toString(36).slice(2, 8)}`,
     alive: true,
     ap: 2,
