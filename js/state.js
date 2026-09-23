@@ -1,9 +1,9 @@
 export const SIZE = 20;
-export const MAP_STORAGE_KEY = "arena-heroes-map-v2";
+export const MAP_STORAGE_KEY = "arena-heroes-map-v3";
 
 export const ABILITIES = Object.freeze({
   none: { label: "Keine" },
-  stun: { label: "Power-Schlag" },
+  stun: { label: "Betäuben" },
   mark: { label: "Markieren" },
   heal: { label: "Heilen" },
   trap: { label: "Mine" },
@@ -36,8 +36,10 @@ export function createState() {
     core: null,
     tool: "select",
     editorSelected: null,
-    traps: [],
+    editorTerrain: null,
     formTarget: null,
-    battleSnapshot: null
+    traps: [],
+    battleSnapshot: null,
+    mission: { type: "destroy_core", coreHp: 100, coreMaxHp: 100 }
   };
 }
