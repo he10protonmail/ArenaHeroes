@@ -1,5 +1,16 @@
 export const SIZE = 20;
 export const MAP_STORAGE_KEY = "arena-heroes-map-v2";
+
+export const ABILITIES = Object.freeze({
+  none: { label: "Keine" },
+  stun: { label: "Power-Schlag" },
+  mark: { label: "Markieren" },
+  heal: { label: "Heilen" },
+  trap: { label: "Mine" },
+  push: { label: "Push" },
+  pull: { label: "Pull" }
+});
+
 export const STATUS = Object.freeze({
   burning: { label: "Brennend", icon: "🔥", duration: 2 },
   stunned: { label: "Betäubt", icon: "⚡", duration: 1 },
