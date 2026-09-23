@@ -156,19 +156,24 @@ function renderBattleScreen(){
   if(overlay)overlay.innerHTML=`<div class="battle-overlay-box"><h2>${state.victory?"Sieg":"Niederlage"}</h2><p>${state.victory?"Der Energiekern wurde zerstört.":"Alle Helden sind kampfunfähig."}</p><button data-action="restore-battle">Kampf zurücksetzen</button></div>`;
 }
 function esc(v){return String(v??"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");}
-function renderUnitForm(u){
-  return `<label class="formlabel">Name<input class="input" id="unit-name" value="${esc(u.name)}"></label>
+function renderUnitForm(u,isNew){
+  const numberField=(id,label,value)=>`<label class="formlabel">${label}<input class="input" id="unit-${id}" type="number" value="${Number(value||0)}"></label>`;
+  return `${isNew?'<div class="small">Neue Einheit – noch nicht gespeichert.</div>':""}
+  <label class="formlabel">Name<input class="input" id="unit-name" value="${esc(u.name)}"></label>
   <div class="two"><label class="formlabel">Kurzicon<input class="input" id="unit-short" value="${esc(u.short)}"></label><label class="formlabel">Farbe<input class="input" id="unit-color" type="color" value="${u.color||"#4daeff"}"></label></div>
   <label class="formlabel">Klasse<input class="input" id="unit-class" value="${esc(u.className)}"></label>
   <label class="formlabel">Team<select class="input" id="unit-team"><option value="hero" ${u.team==="hero"?"selected":""}>Held</option><option value="enemy" ${u.team==="enemy"?"selected":""}>Gegner</option></select></label>
   <div class="preview" id="unit-preview" style="${u.image?`background-image:url('${u.image}')`:""}"></div><label class="upload">Einheitenbild hochladen<input class="file" id="unit-image" type="file" accept="image/*"></label>
   <div class="two">
-  ${["hp","attack","defense","movement","range","damage","heal","knockback","stability","trapDamage"].map(k=>`<label class="formlabel">${k}<input class="input" id="unit-${k}" type="number" value="${Number(u[k]||0)}"></label>`).join("")}</div>
+  ${numberField("maxhp","Max. HP",u.maxHp??u.hp)}
+  ${["attack","defense","movement","range","damage","heal","knockback","stability","trapDamage"].map(k=>numberField(k,k,u[k])).join("")}</div>
+  ${isNew?"":`<div class="small">Aktuelle HP: ${u.hp}/${u.maxHp} (bleiben beim Speichern erhalten, außer Max. HP wird unterschritten).</div>`}
   <label class="check"><input id="unit-flying" type="checkbox" ${u.flying?"checked":""}> Fliegend</label>
   <label class="formlabel">Fähigkeit<select class="input" id="unit-ability">${Object.entries(ABILITIES).map(([k,v])=>`<option value="${k}" ${u.abilityType===k?"selected":""}>${v.label}</option>`).join("")}</select></label>
   <label class="formlabel">Fähigkeitsname<input class="input" id="unit-ability-name" value="${esc(u.abilityName)}"></label>
-  <div class="two"><label class="formlabel">X<input class="input" id="unit-x" type="number" min="0" max="19" value="${u.x}"></label><label class="formlabel">Y<input class="input" id="unit-y" type="number" min="0" max="19" value="${u.y}"></label></div>
-  <button class="success wide" id="save-unit-btn">Einheit speichern</button><button class="warning wide" id="delete-unit-btn">Einheit entfernen</button>`;
+  <div class="two"><label class="formlabel">X<input class="input" id="unit-x" type="number" min="0" max="${SIZE-1}" value="${u.x}"></label><label class="formlabel">Y<input class="input" id="unit-y" type="number" min="0" max="${SIZE-1}" value="${u.y}"></label></div>
+  <div class="two"><button class="success wide" id="save-unit-btn">${isNew?"Einheit anlegen":"Änderungen speichern"}</button><button class="wide" id="cancel-unit-btn">Abbrechen</button></div>
+  ${isNew?"":'<button class="warning wide" id="delete-unit-btn">Einheit entfernen</button>'}`;
 }
 function renderTerrainForm(x,y){
   const c=getCell(board,x,y);if(!c)return "";
@@ -182,21 +187,102 @@ function renderEditorScreen(){
   document.getElementById("battle-screen")?.classList.add("hidden");document.getElementById("editor-screen")?.classList.remove("hidden");
   renderBoard(document.getElementById("editor-board"));
   const list=document.getElementById("unit-list");
-  if(list)list.innerHTML=state.units.map(u=>`<button class="unit-item ${u.id===state.formTarget?"selected-item":""}" data-unit-id="${u.id}"><span>${u.name}</span><small>${u.team==="hero"?"Held":"Gegner"}</small></button>`).join("")||'<div class="small">Keine Einheiten.</div>';
-  const form=document.getElementById("unit-form"),u=state.units.find(x=>x.id===state.formTarget);
-  form.innerHTML=u?renderUnitForm(u):state.editorTerrain?renderTerrainForm(state.editorTerrain.x,state.editorTerrain.y):'<div class="small">Einheit auswählen oder im Gelände-Editor ein Feld anklicken.</div>';
+  if(list)list.innerHTML=state.units.map(u=>`<button class="unit-item ${(!state.editorDraft?.isNew&&state.editorDraft?.unit.id===u.id)?"selected-item":""}" data-unit-id="${u.id}"><span>${u.name}</span><small>${u.team==="hero"?"Held":"Gegner"}</small></button>`).join("")||'<div class="small">Keine Einheiten.</div>';
+  const form=document.getElementById("unit-form");
+  form.innerHTML=state.editorDraft?renderUnitForm(state.editorDraft.unit,state.editorDraft.isNew):state.editorTerrain?renderTerrainForm(state.editorTerrain.x,state.editorTerrain.y):'<div class="small">Einheit auswählen oder im Gelände-Editor ein Feld anklicken.</div>';
   document.querySelectorAll("[data-tool]").forEach(b=>b.classList.toggle("active",b.dataset.tool===state.tool));
 }
 function render(){state.screen==="battle"?renderBattleScreen():renderEditorScreen();}
 function readFile(file){return new Promise((resolve,reject)=>{if(!file)return resolve("");const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});}
-async function saveEditedUnit(){
-  const u=state.units.find(x=>x.id===state.formTarget);if(!u)return;
+// --- Einheiten-Editor: Bearbeiten (bestehend) und Anlegen (neu) sind bewusst
+// getrennte Pfade. Beide arbeiten auf state.editorDraft, einer Arbeitskopie,
+// die state.units erst beim Speichern verändert. So bleibt "Abbrechen" immer
+// verlustfrei, und eine neue Einheit landet nie unvollständig/ungewollt auf
+// der Karte, nur weil man den Editor verlassen hat.
+
+function startEditUnit(unit){
+  state.editorDraft={isNew:false,unit:clone(unit)};
+  state.formTarget=unit.id;
+  state.editorTerrain=null;
+}
+function findFreeEditorCell(){
+  for(let y=1;y<SIZE-1;y++)for(let x=1;x<SIZE-1;x++)if(!atAny(x,y)&&getCell(board,x,y)?.walk)return{x,y};
+  return{x:0,y:0};
+}
+function startNewUnitDraft(overrides={}){
+  const free=findFreeEditorCell();
+  const unit=createCustomUnit();
+  Object.assign(unit,{x:free.x,y:free.y},overrides);
+  state.editorDraft={isNew:true,unit};
+  state.formTarget=null;
+  state.editorTerrain=null;
+}
+function cancelUnitDraft(){
+  state.editorDraft=null;
+  state.formTarget=null;
+  render();
+}
+function readUnitFormValues(current){
   const val=id=>document.getElementById(id)?.value;
-  u.name=val("unit-name")||u.name;u.short=val("unit-short")||u.short;u.color=val("unit-color")||u.color;u.className=val("unit-class")||u.className;u.team=val("unit-team")||u.team;
-  for(const k of ["hp","attack","defense","movement","range","damage","heal","knockback","stability","trapDamage"])u[k]=Number(val(`unit-${k}`)||0);
-  u.maxHp=Math.max(1,u.hp);u.hp=u.maxHp;u.flying=!!document.getElementById("unit-flying")?.checked;u.abilityType=val("unit-ability")||"none";u.abilityName=val("unit-ability-name")||ABILITIES[u.abilityType]?.label||"Keine";
-  u.x=Math.max(0,Math.min(19,Number(val("unit-x")||u.x)));u.y=Math.max(0,Math.min(19,Number(val("unit-y")||u.y)));
-  const file=document.getElementById("unit-image")?.files?.[0];if(file)u.image=await readFile(file);
+  const num=(id,fallback)=>{const n=Number(val(id));return Number.isFinite(n)?n:fallback;};
+  const abilityType=val("unit-ability")||current.abilityType||"none";
+  return {
+    name:val("unit-name")||current.name,
+    short:val("unit-short")||current.short,
+    color:val("unit-color")||current.color,
+    className:val("unit-class")||current.className,
+    team:val("unit-team")||current.team,
+    maxHp:Math.max(1,num("unit-maxhp",current.maxHp??current.hp)),
+    attack:Math.max(0,num("unit-attack",current.attack)),
+    defense:Math.max(0,num("unit-defense",current.defense)),
+    movement:Math.max(0,num("unit-movement",current.movement)),
+    range:Math.max(0,num("unit-range",current.range)),
+    damage:Math.max(0,num("unit-damage",current.damage)),
+    heal:Math.max(0,num("unit-heal",current.heal)),
+    knockback:Math.max(0,num("unit-knockback",current.knockback)),
+    stability:Math.max(0,num("unit-stability",current.stability)),
+    trapDamage:Math.max(0,num("unit-trapDamage",current.trapDamage)),
+    flying:!!document.getElementById("unit-flying")?.checked,
+    abilityType,
+    abilityName:val("unit-ability-name")||ABILITIES[abilityType]?.label||"Keine",
+    x:Math.max(0,Math.min(SIZE-1,num("unit-x",current.x))),
+    y:Math.max(0,Math.min(SIZE-1,num("unit-y",current.y)))
+  };
+}
+async function saveUnitDraft(){
+  if(!state.editorDraft)return;
+  const {isNew,unit}=state.editorDraft;
+  const values=readUnitFormValues(unit);
+  const file=document.getElementById("unit-image")?.files?.[0];
+  const image=file?await readFile(file):unit.image;
+
+  if(isNew){
+    if(atAny(values.x,values.y)){addLog("Feld ist bereits belegt – Einheit nicht angelegt.");return;}
+    const created=makeUnit({...unit,...values,image,hp:values.maxHp});
+    state.units.push(created);
+    state.editorDraft=null;
+    state.formTarget=created.id;
+    addLog(`${created.name} wurde angelegt.`);
+  } else {
+    const existing=state.units.find(u=>u.id===unit.id);
+    if(!existing){state.editorDraft=null;render();return;}
+    const moved=values.x!==existing.x||values.y!==existing.y;
+    if(moved&&state.units.some(o=>o.id!==existing.id&&o.x===values.x&&o.y===values.y)){
+      addLog("Feld ist bereits belegt – Position nicht geändert.");values.x=existing.x;values.y=existing.y;
+    }
+    // Bewusst KEIN Vollheilen beim Bearbeiten: aktuelle HP bleiben erhalten
+    // und werden nur auf die neue Max-HP begrenzt, falls diese gesenkt wurde.
+    const hp=Math.min(existing.hp,values.maxHp);
+    Object.assign(existing,makeUnit({...existing,...values,image,id:existing.id,hp}));
+    state.editorDraft=null;
+    addLog(`${existing.name} wurde aktualisiert.`);
+  }
+  render();
+}
+function deleteUnit(id){
+  state.units=state.units.filter(u=>u.id!==id);
+  if(state.formTarget===id)state.formTarget=null;
+  if(state.editorDraft&&!state.editorDraft.isNew&&state.editorDraft.unit.id===id)state.editorDraft=null;
   render();
 }
 async function saveTerrain(){
@@ -206,14 +292,20 @@ async function saveTerrain(){
   const file=document.getElementById("terrain-image")?.files?.[0];if(file)c.image=await readFile(file);
   state.editorTerrain=null;render();
 }
-function deleteEditedUnit(){state.units=state.units.filter(u=>u.id!==state.formTarget);state.formTarget=null;render();}
-function createCustomUnitAtEditor(){const u=createCustomUnit();state.units.push(u);state.formTarget=u.id;state.editorTerrain=null;render();}
-function saveEditableMap(){persistMap({version:3,board,units:state.units,traps:state.traps,core:state.core});addLog("Karte gespeichert.");}
+function deleteEditedUnit(){
+  if(state.editorDraft&&!state.editorDraft.isNew)deleteUnit(state.editorDraft.unit.id);
+}
+function createCustomUnitAtEditor(){startNewUnitDraft();render();}
+function saveEditableMap(){
+  if(state.editorDraft)addLog("Hinweis: eine Einheit wurde noch nicht gespeichert und ist nicht Teil der gespeicherten Karte.");
+  persistMap({version:3,board,units:state.units,traps:state.traps,core:state.core});addLog("Karte gespeichert.");
+}
 function loadEditableMap(){
   const d=readMap();if(!d){alert("Keine gespeicherte Karte gefunden.");return;}
-  board=d.board||createEmptyMap();state.units=(d.units||[]).map(u=>makeUnit(u));state.traps=d.traps||[];state.core=d.core||null;state.formTarget=null;state.editorTerrain=null;render();
+  board=d.board||createEmptyMap();state.units=(d.units||[]).map(u=>makeUnit(u));state.traps=d.traps||[];state.core=d.core||null;
+  state.formTarget=null;state.editorTerrain=null;state.editorDraft=null;render();
 }
-function clearEditableMap(){setupMap();state.units=[];state.traps=[];state.core=null;state.formTarget=null;state.editorTerrain=null;render();}
+function clearEditableMap(){setupMap();state.units=[];state.traps=[];state.core=null;state.formTarget=null;state.editorTerrain=null;state.editorDraft=null;render();}
 function endTurn(){state.mode=null;state.highlight=[];advanceTurn();render();}
 function activateMode(mode){
   const u=getCurrentUnit();if(!u||u.ap<1||hasStatus(u,"stunned")||hasStatus(u,"knocked_down")||state.victory||state.defeat)return;
@@ -290,9 +382,19 @@ function clickBattleTile(x,y){
   render();
 }
 function clickEditorTile(x,y){
-  if(state.tool==="select"){const u=atAny(x,y);if(u){state.formTarget=u.id;state.editorTerrain=null;}else{state.editorTerrain={x,y};state.formTarget=null;}return;}
-  if(state.tool==="unit"){if(!atAny(x,y)){const key=state.editorSelected||"powerkim",t=templates[key]||createCustomUnit();const u=makeUnit({...t,x,y});state.units.push(u);state.formTarget=u.id;state.editorTerrain=null;}return;}
-  if(terrainTools.includes(state.tool)){const c=getCell(board,x,y);Object.assign(c,makeTerrain(state.tool,c.image));state.editorTerrain={x,y};state.formTarget=null;}
+  if(state.tool==="select"){
+    const u=atAny(x,y);
+    if(u)startEditUnit(u);
+    else{state.editorDraft=null;state.formTarget=null;state.editorTerrain={x,y};}
+    return;
+  }
+  if(state.tool==="unit"){
+    if(atAny(x,y)){addLog("Feld ist bereits belegt.");return;}
+    const key=state.editorSelected||"powerkim",t=templates[key]?{...templates[key]}:null;
+    startNewUnitDraft(t?{...t,x,y}:{x,y});
+    return;
+  }
+  if(terrainTools.includes(state.tool)){const c=getCell(board,x,y);Object.assign(c,makeTerrain(state.tool,c.image));state.editorTerrain={x,y};state.formTarget=null;state.editorDraft=null;}
   if(state.tool==="delete"){Object.assign(getCell(board,x,y),makeTerrain("floor"));state.editorTerrain=null;}
 }
 function buildStaticShell(){
@@ -309,8 +411,8 @@ function buildStaticShell(){
   delegatedClick(w,"[data-action]",b=>{const a=b.dataset.action;if(a==="move"||a==="attack"||a==="ability")activateMode(a);if(a==="end-turn")endTurn();if(a==="restore-battle")restoreBattle();});
   delegatedClick(w,".tile",t=>{const x=Number(t.dataset.x),y=Number(t.dataset.y);state.screen==="battle"?clickBattleTile(x,y):clickEditorTile(x,y);render();});
   delegatedClick(w,"[data-tool]",b=>{state.tool=b.dataset.tool;if(state.tool!=="unit")state.editorSelected=null;render();});
-  delegatedClick(w,"[data-unit-id]",b=>{state.formTarget=b.dataset.unitId;state.editorTerrain=null;render();});
-  delegatedClick(w,"#new-unit-btn",createCustomUnitAtEditor);delegatedClick(w,"#save-unit-btn",saveEditedUnit);delegatedClick(w,"#delete-unit-btn",deleteEditedUnit);delegatedClick(w,"#save-terrain-btn",saveTerrain);
+  delegatedClick(w,"[data-unit-id]",b=>{const u=state.units.find(x=>x.id===b.dataset.unitId);if(u)startEditUnit(u);render();});
+  delegatedClick(w,"#new-unit-btn",createCustomUnitAtEditor);delegatedClick(w,"#save-unit-btn",saveUnitDraft);delegatedClick(w,"#cancel-unit-btn",cancelUnitDraft);delegatedClick(w,"#delete-unit-btn",deleteEditedUnit);delegatedClick(w,"#save-terrain-btn",saveTerrain);
   delegatedClick(w,"#save-map-btn",saveEditableMap);delegatedClick(w,"#load-map-btn",loadEditableMap);delegatedClick(w,"#clear-map-btn",clearEditableMap);
   delegatedClick(w,"#test-map-btn",()=>{state.screen="battle";startRound();snapshotBattle();render();});
   document.getElementById("battle-button").onclick=()=>{state.screen="battle";startRound();render();};
